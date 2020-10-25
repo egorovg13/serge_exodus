@@ -1,0 +1,7 @@
+.DS_store
+node_modules
+/node_modules
+*.txt
+/*.env
+.sass-cache
+npm_debug.log
