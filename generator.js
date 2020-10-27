@@ -1,38 +1,45 @@
 const fs = require('fs');
-const https = require('https');
+const axios = require('axios')
 
 const { registerFont, createCanvas, loadImage } = require('canvas');
 registerFont('buky.ttf', { family: 'Buky'})
 
-const width = 900;
-const height = 1200;
+const draw = async (image, quoteObj, ctx, canvas) => {
 
-const canvas = createCanvas(width, height);
-const ctx = canvas.getContext('2d');
-
-const draw = (image) => {
     ctx.drawImage(image, 0, 0);
 
     ctx.fillStyle = '#ffffcc'
-    ctx.fillRect(0,width,width,300);
+    ctx.fillRect(0, canvas.width, canvas.width,300);
+
+    await addText(quoteObj, ctx);
 }
-// 
 
-const addRandomQuote = () => {
+const getBibleText = async () => {
 
-let randomChapter = '.' + Math.floor(Math.random() * 40);
-let randomVerse = '.' + Math.floor(Math.random() * 43);
+    let randomChapter = '.' + Math.floor(Math.random() * 40);
+    let randomVerse = '.' + Math.floor(Math.random() * 43);
 
-console.log('startng getQuote')
+    try {
+        let responce = await axios.get('https://api.bibleonline.ru/bible?trans=rst66&q=exodus' + randomChapter + randomVerse);
+        let jsonp = responce.data;
+        if (jsonp.length > 10) {
+            let parsedQuote = await parseJsonp(jsonp);
+            return parsedQuote;
+        } else {
+            console.log('getBibleText: no verse found')
+            let newParsedQuote = await getBibleText();
+            return newParsedQuote;
+        }
 
-    https.get('https://api.bibleonline.ru/bible?trans=rst66&q=exodus' + randomChapter + randomVerse, resp => {
-        let jsonp = ''
-        resp.on('data', chunk => {
-            jsonp += chunk
-        })
-        resp.on('end', () => {
-            console.log(jsonp);
-            let parsedData = JSON.parse(jsonp.slice(1, jsonp.length - 2));
+      } catch (error) {
+        console.error(error)
+      }
+}
+
+const parseJsonp = async (jsonp) => {
+    let json = jsonp.slice(1, jsonp.length - 2)
+    let parsedData = JSON.parse(json);
+
                 if (parsedData[1]) {
                     let book = parsedData[0].h2;
                     let chapter = parsedData[1].v.n;
@@ -42,15 +49,16 @@ console.log('startng getQuote')
 
                     let parsedVerse = verse.split(reFil).join('').replace('&mdash;', '');
 
-                    parsedVerse = parsedVerse.charAt(0).toUpperCase() + parsedVerse.slice(1)
+                    parsedVerse = parsedVerse.charAt(0).toUpperCase() + parsedVerse.slice(1);
+                    let quoteObj = 
+                    {verse: parsedVerse, 
+                    book: book}
 
-                    addText(book, parsedVerse).then(saveImage());
-            } else {
-                console.log('no verse found')
-                addRandomQuote();
-            }
-        })
-    });
+                    return quoteObj
+                } else {
+                        console.log('no verse found')
+                        await getBibleText();
+                }
 }
 
 let splitLines = (text) => {
@@ -68,9 +76,11 @@ let splitLines = (text) => {
     return lines;
 }
 
-const addText = async (book, text) => {
+const addText = async (quoteObj, ctx) => {
+    let book = quoteObj.book;
+    let verse = quoteObj.verse;
 
-    let linesToPrint = splitLines(text);
+    let linesToPrint = splitLines(verse);
     let fontSize = 42
     ctx.font = fontSize +'px Buky';
 
@@ -95,16 +105,35 @@ const addText = async (book, text) => {
     }
 }
 
-const saveImage = () => {
+const saveImage = async (imgName, canvas) => {
+    console.log(`saveimage img name is ${imgName}`)
+
     const buffer = canvas.toBuffer('image/jpeg', {compressionLevel: 6, filters: canvas.PNG_ALL_FILTERS});
-    fs.writeFileSync('./image2.jpeg', buffer, () => {console.log('fs finished')})
+
+    fs.writeFileSync(imgName, buffer);
+
+    console.log('saving file finished')
 }
 
-let randomImage = './sourcepics/' + Math.floor(Math.random() * 28) + '.jpg'
+module.exports = {
+    generate: async (imgName) => {
+        const width = 900;
+        const height = 1200;
+    
+        const canvas = createCanvas(width, height);
+        const ctx = canvas.getContext('2d');
 
-loadImage(randomImage).then((image) => {
-    draw(image);
-})
-.then(() => addRandomQuote())
+        randomImage = './sourcepics/' + Math.floor(Math.random() * 28) + '.jpg'
+        const image = await loadImage(randomImage);
+        randomImage = '';
 
+        let quoteObj = await getBibleText();
+        console.log('quote object in the main function:')
+        console.log(quoteObj)
 
+        await draw(image, quoteObj, ctx, canvas);
+        console.log('genrate: text added')
+        await saveImage(imgName, canvas);
+        console.log('genrate: file saved')
+    }
+}
